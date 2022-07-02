@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import os
 from supabase import create_client, Client
 from database import db
+import json
 
 
 async def get_page(session: aiohttp.ClientSession, url: str, key: str) -> tuple[str, bytes]:
@@ -23,24 +24,27 @@ async def get_soup(key: str, text: bytes) -> None:
 
 
 async def main(supabase_client: Client) -> None:
-    # Make the requests and set the soups to the corresponding classes
+    # Start the request session for champions on op.gg
     async with aiohttp.ClientSession() as session:
 
-        tasks = []
-        # Get the page data for NA-TOP-PlatPlus
+        # Get the page data from op.gg tier lists
+        tier_tasks = []
         for key in constants.LOL_OP_GG_NA_PLAT_PLUS_URLS:
             url: str = constants.LOL_OP_GG_NA_PLAT_PLUS_URLS[key]
-            tasks.append(asyncio.ensure_future(get_page(session, url, key)))
+            tier_tasks.append(asyncio.ensure_future(get_page(session, url, key)))
 
-        pages = await asyncio.gather(*tasks)
+        pages = await asyncio.gather(*tier_tasks)
         for page in pages:
             await get_soup(page[0], page[1])
 
-    # Start the scrape logic
-    await scrape.start()
+    # Start the scrape champions logic
+    # await scrape.scrape_op_gg_champions()
 
     # Update the database
-    await db.update_champions(supabase_client)
+    # await db.update_champions(supabase_client)
+
+    # Start the scrape builds logic
+    await scrape.scrape_op_gg_builds(supabase_client)
 
 
 if __name__ == '__main__':

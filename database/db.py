@@ -4,10 +4,7 @@ from scraping.objects import ChampionStats
 
 
 async def update_champions(client: supabase.Client):
-    # Delete the current values within the database
-    data = client.table('champions').delete().eq('location_id', 1).execute()
-
-    # Add the current data to the database
+    # Update the database with current data for OP.GG Champions
     i = 0
     for key in singletons.OP_GG_CHAMPIONS:
         champ_list: list[ChampionStats] = singletons.OP_GG_CHAMPIONS[key]
@@ -24,6 +21,9 @@ async def update_champions(client: supabase.Client):
                 "position": key
             }
 
-            data = client.table('champions').insert(champ_obj).execute()
-            if not len(data.data) > 0:
-                print(f"Failed to insert {champ_obj['name']}")
+            # Update the champion obj within the database
+            client.table('champions').update(champ_obj)\
+                .eq('name', champ_obj['name'])\
+                .eq('location_id', champ_obj['location_id'])\
+                .eq('position', champ_obj['position'])\
+                .execute()
