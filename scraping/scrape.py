@@ -1,9 +1,10 @@
 import bs4
 from common import singletons, helpers
-from scraping.objects import ChampionStats
+from scraping.objects import ChampionStats, ChampionBuild
 import supabase
 import aiohttp
 import asyncio
+import time
 
 
 async def scrape_op_gg_champions():
@@ -69,12 +70,29 @@ async def get_build_page(session: aiohttp.ClientSession, url: str):
 async def generate_soups(champions: list):
     async with aiohttp.ClientSession() as session:
         tasks: list = []
+        i = 0
         for champ in champions:
-            formatted_name = champ['name'].lower().replace(' ', '').replace("'", "")
+            formatted_name = champ['name'].lower().replace(' ', '').replace("'", "").replace(".", "")
+
+            if formatted_name == 'wukong':
+                formatted_name = 'monkeyking'
+            elif formatted_name == 'nunu&willump':
+                formatted_name = 'nunu'
+
+            if champ['position'] == 'middle':
+                champ['position'] = 'mid'
+            elif champ['position'] == 'bottom':
+                champ['position'] == 'adc'
+
             url: str = f"https://na.op.gg/champions/{formatted_name}/{champ['position']}/build?region=na&tier" \
                        f"=platinum_plus"
             tasks.append(asyncio.ensure_future(get_build_page(session, url)))
-            break  # REMOVE THIS
+
+            i += 1
+            if i == 10:
+                i = 0
+                print("Sleeping 1 second to avoid the 429 monster")
+                time.sleep(1)
 
         pages = await asyncio.gather(*tasks)
         for page in pages:
@@ -92,12 +110,12 @@ async def scrape_op_gg_builds(client: supabase.Client):
     soups: list[bs4.BeautifulSoup] = singletons.OP_GG_OBJECT.build_soups
 
     for soup in soups:
-        champ_name = soup.find('span', {'class': 'name'}).text
+        champ_name = soup.find('div', {'class': 'info-box'}).find('span', {'class': 'name'}).text
         champ_pos = soup.find('span', {'class': 'build-position'}).text.split()[2].lower()
         champion = client.table('champions').select("*") \
             .eq('name', champ_name) \
             .eq('position', champ_pos) \
-            .execute().data
+            .execute().data[0]
 
         # region Primary Rune Tree
         primary_rune_tree = soup.find('div', {'class': 'css-1nomhew e1o8f102'})
@@ -239,8 +257,13 @@ async def scrape_op_gg_builds(client: supabase.Client):
 
         starter_1_name = starter_table_row.findAll('img')[0].attrs['alt']
         starter_1_img = starter_table_row.findAll('img')[0].attrs['src']
-        starter_2_name = starter_table_row.findAll('img')[1].attrs['alt']
-        starter_2_img = starter_table_row.findAll('img')[1].attrs['src']
+
+        try:
+            starter_2_name = starter_table_row.findAll('img')[1].attrs['alt']
+            starter_2_img = starter_table_row.findAll('img')[1].attrs['src']
+        except:
+            starter_2_name = ""
+            starter_2_img = ""
 
         starter_pick_rate = starter_table_row.findAll('td')[1].find('strong').text.replace('%', '')
         starter_games = starter_table_row.findAll('td')[1].find('small').text.replace(' Games', '').replace(',', '')
@@ -248,14 +271,95 @@ async def scrape_op_gg_builds(client: supabase.Client):
         # endregion
 
         # region Boots
-        boots_table_row = soup.find('div', {'class': 'css-11msl8b e1f5dr6w2'}).findAll('table')[1].find('tbody').findAll('tr')[0]
+        if champ_name == "Cassiopeia":
+            boots_name = ""
+            boots_img = ""
+            boots_pick_rate = 0
+            boots_win_rate = 0
+            boots_games = 0
+        else:
+            boots_table_row = soup.find('div', {'class': 'css-11msl8b e1f5dr6w2'}).findAll('table')[1].find('tbody').findAll('tr')[0]
 
-        boots_name = boots_table_row.find('img').attrs['alt']
-        boots_img = boots_table_row.find('img').attrs['src']
+            boots_name = boots_table_row.find('img').attrs['alt']
+            boots_img = boots_table_row.find('img').attrs['src']
 
-        boots_pick_rate = boots_table_row.findAll('td')[1].find('strong').text.replace('%', '')
-        boots_games = boots_table_row.findAll('td')[1].find('small').text.replace(' Games', '').replace(',', '')
-        boots_win_rate = boots_table_row.findAll('td')[2].text.replace('%', '')
-        print(boots_games, boots_win_rate)
+            boots_pick_rate = boots_table_row.findAll('td')[1].find('strong').text.replace('%', '')
+            boots_games = boots_table_row.findAll('td')[1].find('small').text.replace(' Games', '').replace(',', '')
+            boots_win_rate = boots_table_row.findAll('td')[2].text.replace('%', '')
         # endregion
-        break
+
+        # region Core Build
+        core_table_body = soup.find('div', {'class': 'css-kygzsj e1f5dr6w1'}).find('table').find('tbody')
+
+        core_table_row = core_table_body.findAll('tr')[0]
+
+        item_1_name = core_table_row.findAll('img')[0].attrs['alt']
+        item_1_img = core_table_row.findAll('img')[0].attrs['src']
+
+        item_2_name = core_table_row.findAll('img')[1].attrs['alt']
+        item_2_img = core_table_row.findAll('img')[1].attrs['src']
+
+        item_3_name = core_table_row.findAll('img')[2].attrs['alt']
+        item_3_img = core_table_row.findAll('img')[2].attrs['src']
+
+        items_pick_rate = core_table_row.findAll('td')[1].find('strong').text.replace('%', '')
+        items_games = core_table_row.findAll('td')[1].find('small').text.replace(' Games', '').replace(',', '')
+        items_win_rate = core_table_row.findAll('td')[2].find('strong').text.replace('%', '')
+        # endregion
+
+        # region Create and Append ChampionBuild Object
+        champ_build: ChampionBuild = ChampionBuild(
+            champ_id=champion['id'],
+            location_id=champion['location_id'],
+            primary_tree=primary_tree_name,
+            primary_tree_img=primary_tree_img,
+            keystone=keystone_name,
+            keystone_img=keystone_img,
+            p_1=p_1_name,
+            p_1_img=p_1_img,
+            p_2=p_2_name,
+            p_2_img=p_2_img,
+            p_3=p_3_name,
+            p_3_img=p_3_img,
+            secondary_tree=secondary_tree_name,
+            secondary_tree_img=secondary_tree_img,
+            s_1=s_1_name,
+            s_1_img=s_1_img,
+            s_2=s_2_name,
+            s_2_img=s_2_img,
+            stat_1=stat_1_name,
+            stat_1_img=stat_1_img,
+            stat_2=stat_2_name,
+            stat_2_img=stat_2_img,
+            stat_3=stat_3_name,
+            stat_3_img=stat_3_img,
+            runes_pick_rate=float(runes_pick_rate),
+            runes_win_rate=float(runes_win_rate),
+            runes_games=int(runes_games),
+            starter_1=starter_1_name,
+            starter_1_img=starter_1_img,
+            starter_2=starter_2_name,
+            starter_2_img=starter_2_img,
+            starter_pick_rate=float(starter_pick_rate),
+            starter_win_rate=float(starter_win_rate),
+            starter_games=int(starter_games),
+            boots=boots_name,
+            boots_img=boots_img,
+            boots_pick_rate=float(boots_pick_rate),
+            boots_win_rate=float(boots_win_rate),
+            boots_games=int(boots_games),
+            item_1=item_1_name,
+            item_1_img=item_1_img,
+            item_2=item_2_name,
+            item_2_img=item_2_img,
+            item_3=item_3_name,
+            item_3_img=item_3_img,
+            items_pick_rate=float(items_pick_rate),
+            items_win_rate=float(items_win_rate),
+            items_games=int(items_games)
+        )
+
+        singletons.OP_GG_BUILDS.append(champ_build)
+        print(f"Appended {champion['name']}'s build at {champion['position']}")
+        # endregion
+

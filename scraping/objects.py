@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from dataclasses_json import dataclass_json
 
 
 @dataclass
@@ -12,8 +13,13 @@ class ChampionStats:
     ban_rate: float
 
 
+@dataclass_json
 @dataclass
 class ChampionBuild:
+    # DB Specifics
+    champ_id: int
+    location_id: int
+
     # Runes
     primary_tree: str
     primary_tree_img: str

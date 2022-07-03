@@ -5,7 +5,6 @@ from scraping.objects import ChampionStats
 
 async def update_champions(client: supabase.Client):
     # Update the database with current data for OP.GG Champions
-    i = 0
     for key in singletons.OP_GG_CHAMPIONS:
         champ_list: list[ChampionStats] = singletons.OP_GG_CHAMPIONS[key]
         for champ in champ_list:
@@ -27,3 +26,14 @@ async def update_champions(client: supabase.Client):
                 .eq('location_id', champ_obj['location_id'])\
                 .eq('position', champ_obj['position'])\
                 .execute()
+
+            # client.table('champions').insert(champ_obj).execute()
+
+
+async def update_builds(client: supabase.Client):
+    # Update the database with the current build data
+    for build in singletons.OP_GG_BUILDS:
+        build_obj = build.to_dict()
+        data = client.table('builds').insert(build_obj).execute()
+        if len(data.data) > 0:
+            print(f'Added {build_obj["champ_id"]} to db')

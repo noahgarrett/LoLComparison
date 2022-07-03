@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import os
 from supabase import create_client, Client
 from database import db
-import json
+from testing import test
 
 
 async def get_page(session: aiohttp.ClientSession, url: str, key: str) -> tuple[str, bytes]:
@@ -46,6 +46,9 @@ async def main(supabase_client: Client) -> None:
     # Start the scrape builds logic
     await scrape.scrape_op_gg_builds(supabase_client)
 
+    # Update the database with builds
+    await db.update_builds(supabase_client)
+
 
 if __name__ == '__main__':
     start_time = time.time()
@@ -61,5 +64,6 @@ if __name__ == '__main__':
     # Set the event loop policy and run the main function async
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(main(supabase_client=client))
+    # test.soup_test()
 
     print("--- %s seconds ---" % (time.time() - start_time))
